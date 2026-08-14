@@ -274,15 +274,16 @@ JWT claims include roles. The console can hide tabs (e.g., System admin views) f
 
 ### scaffold → multi-module
 
-1. Create parent `pom.xml` (packaging: pom) with two modules
+1. Create parent `pom.xml` (packaging: pom, GAV: `io.casehub:scaffold`) with two modules
 2. Move existing `src/`, `pom.xml` content into `scaffold-backend/`
-3. Rename artifact from `scaffold` to `scaffold-backend`
-4. Parent artifact keeps the `scaffold` name
+3. Backend artifact becomes `io.casehub:scaffold-backend` (packaging: quarkus)
+4. New web artifact is `io.casehub:scaffold-web` (packaging: jar, Quinoa bundles into META-INF/resources)
 5. Verify `mvn install` from the parent builds both modules
 6. Verify headless mode: `mvn install -pl scaffold-backend` skips the web module
 
 ### Future Extensibility
 
-- **New blocks-ui OPS components:** As OPS builds new blocks-ui components, scaffold-web adds `registerPanel()` + `hostPanel()` calls. No structural changes.
+- **New blocks-ui OPS components:** The Operations tab composes existing blocks-ui components (`approval-gate`, `dag-viewer`, `compliance-summary`, `kpi-metric-row`) that are available now. OPS-specific components (desired-state graph decorations, reconciliation status views) are being built separately. As they land, scaffold-web adds `registerPanel()` + `hostPanel()` calls. The Operations tab works with current components and improves as new ones arrive — it is not blocked.
+- **Pages tab-switching API:** Cross-tab navigation (D9) requires programmatic tab switching. Verify that devtown already uses this pattern before implementing `navigation.ts`. If not, a small pages framework addition may be needed.
 - **BFF endpoints:** If a view needs aggregated data, add a REST resource in scaffold-backend. The frontend switches from `rest()` source to the BFF endpoint.
 - **Domain app override:** A domain app (devtown, clinical) can include scaffold-web as a dependency and override/extend the tab structure if needed. Not a v1 concern.
