@@ -6,27 +6,30 @@
 > (test-driven-development) and uses ide-tooling for structural
 > editing. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Focal issue:** TBD — create before starting
-**Issue group:** TBD
+**Focal issue:** #41 — Add generic platform console to scaffold
+**Issue group:** #42, #43, #44, #45, #46, #47
 
 **Goal:** Add a generic platform console (web UI) to scaffold that composes casehub-pages and blocks-ui components into a tabbed dashboard covering the full CaseHub platform surface.
 
 **Architecture:** scaffold becomes a multi-module Maven project. The existing single module becomes `scaffold-backend`. A new `scaffold-web` module adds a Lit + TypeScript frontend bundled by Quinoa. The frontend is pure composition — zero new Lit components — using pages' DSL (`page()`, `tabs()`, `hostPanel()`) to wire blocks-ui workbenches to existing REST endpoints.
 
-**Tech Stack:** Java 21 / Quarkus 3.32.2, Lit 3 / TypeScript / esbuild / Quinoa, casehub-pages DSL, blocks-ui web components
+**Tech Stack:** Java 21 / Quarkus 3.32.2, Lit 3 / TypeScript / esbuild / Quinoa 2.8.3, casehub-pages DSL, blocks-ui web components
 
 ## Global Constraints
 
 - Quarkus version: `3.32.2` (match `version.quarkus.platform` in existing pom.xml)
+- Quinoa version: `2.8.3` (from casehub-parent `<quarkus-quinoa.version>`)
 - blocks-ui-npm version: `0.1-SNAPSHOT`
 - pages-npm version: `0.2-SNAPSHOT`
 - Zero new Lit web components — composition only via pages DSL
 - All REST endpoints called directly from the browser — no BFF
 - Frontend file pattern follows devtown exactly (esbuild.config.mjs, index.html, src/index.ts, src/datasets.ts, src/views/*.ts)
+- Tab navigation via `site.navigate(tabLabel)` — `LiveSite.navigate(path)` walks the component tree using slot names
+- Events via `emitPagesEvent(target, topic, payload)` from `@casehubio/pages-component` — first arg is an `EventTarget` (use the app container element)
 
 ---
 
-### Task 1: Convert scaffold to multi-module Maven project
+### Task 1: Convert scaffold to multi-module Maven project (#42)
 
 **Files:**
 - Create: `scaffold/pom.xml` (new parent POM)
@@ -57,14 +60,25 @@ Create `scaffold/pom.xml` as a `pom` parent with two modules:
 
     <modules>
         <module>scaffold-backend</module>
-        <module>scaffold-web</module>
     </modules>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.version>3.32.2</quarkus.platform.version>
+        <quarkus-quinoa.version>2.8.3</quarkus-quinoa.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.quarkiverse.quinoa</groupId>
+                <artifactId>quarkus-quinoa</artifactId>
+                <version>${quarkus-quinoa.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <repositories>
         <repository>
@@ -76,15 +90,35 @@ Create `scaffold/pom.xml` as a `pom` parent with two modules:
             </snapshots>
         </repository>
     </repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>casehubio GitHub Packages</name>
+            <url>https://maven.pkg.github.com/casehubio/flow</url>
+        </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <name>casehubio GitHub Packages</name>
+            <url>https://maven.pkg.github.com/casehubio/flow</url>
+            <uniqueVersion>false</uniqueVersion>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <scm>
+        <connection>scm:git:https://github.com/casehubio/flow.git</connection>
+        <developerConnection>scm:git:https://github.com/casehubio/flow.git</developerConnection>
+        <url>https://github.com/casehubio/flow</url>
+        <tag>HEAD</tag>
+    </scm>
 </project>
 ```
 
-- [ ] **Step 2: Move existing sources into scaffold-backend/**
+- [ ] **Step 2: Create scaffold-backend directory and move sources**
 
 ```bash
 mkdir scaffold-backend
-mv src scaffold-backend/
-mv target scaffold-backend/ 2>/dev/null || true
+git mv src scaffold-backend/
 ```
 
 - [ ] **Step 3: Create scaffold-backend/pom.xml from existing pom.xml**
@@ -94,38 +128,82 @@ Copy the existing `pom.xml` content into `scaffold-backend/pom.xml`. Change:
 - Change `<artifactId>` from `scaffold` to `scaffold-backend`
 - Remove `<groupId>` and `<version>` (inherited from parent)
 - Remove the `<repositories>` section (inherited from parent)
-- Remove `<properties>` that are now in the parent (`maven.compiler.release`, `project.build.sourceEncoding`, `quarkus.platform.version`)
+- Remove `<distributionManagement>` (inherited from parent)
+- Remove `<scm>` (inherited from parent)
+- Remove `<properties>` that are now in the parent (`maven.compiler.release`, `project.build.sourceEncoding`, `project.reporting.outputEncoding`, `quarkus.platform.version`)
+- Keep `<skipITs>`, `<compiler-plugin.version>`, `<surefire-plugin.version>` in child properties
 - Keep all dependencies, plugins, and profiles as-is
+- `<packaging>` stays as `quarkus`
 
-The `<packaging>` stays as `quarkus`.
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
-- [ ] **Step 4: Remove old root pom.xml**
+    <parent>
+        <groupId>io.casehub</groupId>
+        <artifactId>scaffold</artifactId>
+        <version>0.2-SNAPSHOT</version>
+    </parent>
 
-Delete the original `pom.xml` (now replaced by the parent POM created in Step 1).
+    <artifactId>scaffold-backend</artifactId>
+    <packaging>quarkus</packaging>
 
-- [ ] **Step 5: Verify the backend builds**
+    <properties>
+        <compiler-plugin.version>3.15.0</compiler-plugin.version>
+        <skipITs>false</skipITs>
+        <surefire-plugin.version>3.5.4</surefire-plugin.version>
+    </properties>
+
+    <!-- Keep ALL existing <dependencyManagement>, <dependencies>, <build>, <profiles> sections
+         exactly as they are in the current pom.xml -->
+</project>
+```
+
+The comment above is a placeholder — the actual file must contain the full dependency management, dependencies, build plugins, and profiles sections copied verbatim from the current `pom.xml`. Do not abbreviate.
+
+- [ ] **Step 4: Replace the root pom.xml with the parent POM**
+
+Delete the original `pom.xml` and replace with the parent POM from Step 1.
+
+- [ ] **Step 5: Update CI workflow**
+
+Update `.github/workflows/maven.yml`:
+- Surefire reports path: change `**/target/surefire-reports/*` (already uses glob, should still work)
+- Add Node.js setup step before build (for Quinoa):
+
+```yaml
+      - name: Set up Node.js
+        if: github.event_name != 'pull_request' || github.event.action != 'closed' || github.event.pull_request.merged == true
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+```
+
+- [ ] **Step 6: Verify the backend builds**
 
 Run: `mvn --batch-mode install -pl scaffold-backend -am -DskipTests`
 Expected: BUILD SUCCESS
 
-- [ ] **Step 6: Run existing tests**
+- [ ] **Step 7: Run existing tests**
 
 Run: `mvn --batch-mode test -pl scaffold-backend`
 Expected: All existing tests pass
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add pom.xml scaffold-backend/
-git rm src/ -r  # old location
+git add pom.xml scaffold-backend/ .github/
 git commit -m "chore: convert scaffold to multi-module — move backend to scaffold-backend
 
-Refs #N"
+Refs casehubio/scaffold#42"
 ```
 
 ---
 
-### Task 2: Add ModuleRegistryResource to scaffold-backend
+### Task 2: Add ModuleRegistryResource to scaffold-backend (#43)
 
 **Files:**
 - Create: `scaffold-backend/src/main/java/io/casehub/flow/rest/ModuleRegistryResource.java`
@@ -135,6 +213,8 @@ Refs #N"
 - Produces: `GET /api/modules` → `{"modules": ["engine", "work", ...]}` based on classpath probing
 
 - [ ] **Step 1: Write the failing test**
+
+Use `ide_create_file` to create `scaffold-backend/src/test/java/io/casehub/flow/rest/ModuleRegistryResourceTest.java`:
 
 ```java
 package io.casehub.flow.rest;
@@ -167,10 +247,11 @@ Expected: FAIL — 404 (endpoint does not exist)
 
 - [ ] **Step 3: Write the implementation**
 
+Use `ide_create_file` to create `scaffold-backend/src/main/java/io/casehub/flow/rest/ModuleRegistryResource.java`:
+
 ```java
 package io.casehub.flow.rest;
 
-import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -213,24 +294,31 @@ public class ModuleRegistryResource {
 }
 ```
 
+Note: The probe class names are best-guesses. Use `ide_find_class` during implementation to find the actual canonical class for each module (search for the module's main runtime class or CDI producer). The pattern is correct — the class names may need adjustment.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `mvn --batch-mode test -pl scaffold-backend -Dtest=ModuleRegistryResourceTest -Dsurefire.failIfNoSpecifiedTests=false`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run diagnostics**
+
+Run: `ide_diagnostics` on `ModuleRegistryResource.java`
+Expected: No errors
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add scaffold-backend/src/main/java/io/casehub/flow/rest/ModuleRegistryResource.java
 git add scaffold-backend/src/test/java/io/casehub/flow/rest/ModuleRegistryResourceTest.java
 git commit -m "feat: add /api/modules endpoint for runtime module detection
 
-Refs #N"
+Closes casehubio/scaffold#43"
 ```
 
 ---
 
-### Task 3: Create scaffold-web Maven module with Quinoa
+### Task 3: Create scaffold-web Maven module with Quinoa (#44)
 
 **Files:**
 - Create: `scaffold-web/pom.xml`
@@ -238,8 +326,9 @@ Refs #N"
 - Create: `scaffold-web/src/main/webui/tsconfig.json`
 - Create: `scaffold-web/src/main/webui/esbuild.config.mjs`
 - Create: `scaffold-web/src/main/webui/index.html`
-- Create: `scaffold-web/src/main/webui/src/index.ts` (minimal — just "hello world" in the page)
+- Create: `scaffold-web/src/main/webui/src/index.ts` (minimal placeholder)
 - Create: `scaffold-web/src/main/webui/.gitignore`
+- Modify: `scaffold-backend/src/main/resources/application.properties` (add Quinoa config)
 
 **Interfaces:**
 - Consumes: `casehub-pages-npm` (0.2-SNAPSHOT), `casehub-blocks-ui-npm` (0.1-SNAPSHOT) via maven-dependency-plugin
@@ -315,6 +404,21 @@ Refs #N"
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
@@ -339,16 +443,15 @@ Create `scaffold-web/src/main/webui/package.json`:
     "@casehubio/blocks-ui-case-explorer": "file:.casehub-packages/tarballs/case-explorer.tgz",
     "@casehubio/blocks-ui-compliance-summary": "file:.casehub-packages/tarballs/compliance-summary.tgz",
     "@casehubio/blocks-ui-core": "file:.casehub-packages/tarballs/blocks-ui-core.tgz",
-    "@casehubio/blocks-ui-dag-viewer": "file:.casehub-packages/tarballs/dag-viewer.tgz",
     "@casehubio/blocks-ui-detail-pane": "file:.casehub-packages/tarballs/detail-pane.tgz",
     "@casehubio/blocks-ui-execution-monitor": "file:.casehub-packages/tarballs/execution-monitor.tgz",
     "@casehubio/blocks-ui-kpi-metric-row": "file:.casehub-packages/tarballs/kpi-metric-row.tgz",
     "@casehubio/blocks-ui-list-pane": "file:.casehub-packages/tarballs/list-pane.tgz",
     "@casehubio/blocks-ui-notification-inbox": "file:.casehub-packages/tarballs/notification-inbox.tgz",
     "@casehubio/blocks-ui-orchestration-workbench": "file:.casehub-packages/tarballs/orchestration-workbench.tgz",
+    "@casehubio/blocks-ui-preferences-editor": "file:.casehub-packages/tarballs/preferences-editor.tgz",
     "@casehubio/blocks-ui-routing-rationale": "file:.casehub-packages/tarballs/routing-rationale.tgz",
     "@casehubio/blocks-ui-session-workbench": "file:.casehub-packages/tarballs/session-workbench.tgz",
-    "@casehubio/blocks-ui-sla-indicator": "file:.casehub-packages/tarballs/sla-indicator.tgz",
     "@casehubio/blocks-ui-split-workbench": "file:.casehub-packages/tarballs/split-workbench.tgz",
     "@casehubio/blocks-ui-trust-workbench": "file:.casehub-packages/tarballs/trust-workbench.tgz",
     "@casehubio/blocks-ui-work-item-workbench": "file:.casehub-packages/tarballs/work-item-workbench.tgz",
@@ -495,29 +598,53 @@ dist/
 .casehub-packages/
 ```
 
-- [ ] **Step 8: Verify the full build**
+- [ ] **Step 8: Add scaffold-web module to parent POM**
+
+Add `<module>scaffold-web</module>` to the `<modules>` list in the root `pom.xml`:
+
+```xml
+    <modules>
+        <module>scaffold-backend</module>
+        <module>scaffold-web</module>
+    </modules>
+```
+
+- [ ] **Step 9: Add Quinoa config to application.properties**
+
+Add to `scaffold-backend/src/main/resources/application.properties`:
+
+```properties
+# Quinoa (scaffold-web frontend)
+quarkus.quinoa.build-dir=dist
+quarkus.quinoa.package-manager-install=false
+quarkus.quinoa.enable-spa-routing=true
+quarkus.http.auth.permission.quinoa-static.paths=/,/index.html,/app.js
+quarkus.http.auth.permission.quinoa-static.policy=permit
+```
+
+- [ ] **Step 10: Verify the full build**
 
 Run: `mvn --batch-mode install -DskipTests`
 Expected: BUILD SUCCESS — both modules build, Quinoa bundles the frontend
 
-- [ ] **Step 9: Verify the app serves the UI**
+- [ ] **Step 11: Verify the app serves the UI**
 
 Run: `mvn --batch-mode quarkus:dev -pl scaffold-web`
 Open: `http://localhost:8080`
 Expected: Page renders with "CaseHub Console" title in a tab
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
-git add scaffold-web/
+git add scaffold-web/ scaffold-backend/src/main/resources/application.properties
 git commit -m "feat: add scaffold-web module — Quinoa + pages shell
 
-Refs #N"
+Closes casehubio/scaffold#44"
 ```
 
 ---
 
-### Task 4: Wire datasets and all 10 tab views
+### Task 4: Wire datasets and all 10 tab views (#45)
 
 **Files:**
 - Create: `scaffold-web/src/main/webui/src/datasets.ts`
@@ -564,6 +691,7 @@ export function createDatasets(modules: string[]) {
     rest("actors", "/workitems/actors", { refreshTime: "30second" }),
     rest("audit", "/audit"),
     rest("plan-items", "/api/v1/cases/#{row.caseId}/plan-items"),
+    rest("goals", "/api/v1/cases/#{row.caseId}/goals"),
     rest("case-context", "/api/v1/cases/#{row.caseId}/context"),
   ];
 
@@ -624,13 +752,10 @@ export const workItemsView = hostPanel("work-item-workbench", {
 Create `scaffold-web/src/main/webui/src/views/queues.ts`:
 
 ```typescript
-import { rows, columns, dataTable, hostPanel, title } from "@casehubio/pages-ui";
+import { rows, dataTable, hostPanel } from "@casehubio/pages-ui";
 import { lookup, col, groupBy } from "@casehubio/pages-ui";
 import { registerPanel } from "@casehubio/pages-runtime";
 import "@casehubio/blocks-ui-kpi-metric-row";
-import "@casehubio/blocks-ui-split-workbench";
-import "@casehubio/blocks-ui-list-pane";
-import "@casehubio/blocks-ui-detail-pane";
 
 registerPanel("kpi-metric-row", "blocks-kpi-metric-row");
 
@@ -681,16 +806,18 @@ export const orchestrationView = rows(
 Create `scaffold-web/src/main/webui/src/views/trust-audit.ts`:
 
 ```typescript
-import { rows, columns, dataTable, hostPanel, title } from "@casehubio/pages-ui";
+import { columns, rows, dataTable, hostPanel } from "@casehubio/pages-ui";
 import { lookup, col, groupBy } from "@casehubio/pages-ui";
 import { registerPanel } from "@casehubio/pages-runtime";
 import "@casehubio/blocks-ui-trust-workbench";
 import "@casehubio/blocks-ui-audit-trail-viewer";
 import "@casehubio/blocks-ui-compliance-summary";
+import "@casehubio/blocks-ui-routing-rationale";
 
 registerPanel("trust-workbench", "blocks-trust-workbench");
 registerPanel("audit-trail-viewer", "blocks-audit-trail-viewer");
 registerPanel("compliance-summary", "blocks-compliance-summary");
+registerPanel("routing-rationale", "blocks-routing-rationale");
 
 export const trustAuditView = columns([4, 8],
   [dataTable({
@@ -712,6 +839,10 @@ export const trustAuditView = columns([4, 8],
     hostPanel("compliance-summary", {
       endpoint: "/audit/compliance",
     }),
+    hostPanel("routing-rationale", {
+      endpoint: "/workitems/actors",
+      "actor-id": "#{row.actorId}",
+    }),
   )],
 );
 ```
@@ -726,11 +857,8 @@ import { lookup, col, groupBy } from "@casehubio/pages-ui";
 import { registerPanel } from "@casehubio/pages-runtime";
 import "@casehubio/blocks-ui-kpi-metric-row";
 import "@casehubio/blocks-ui-approval-gate";
-import "@casehubio/blocks-ui-dag-viewer";
-import "@casehubio/blocks-ui-compliance-summary";
 
 registerPanel("approval-gate", "blocks-approval-gate");
-registerPanel("dag-viewer", "blocks-dag-viewer");
 
 export const operationsView = rows(
   hostPanel("kpi-metric-row", { endpoint: "/api/applications/health" }),
@@ -754,9 +882,6 @@ export const operationsView = rows(
       hostPanel("approval-gate", {
         endpoint: "/api/approvals",
       }),
-      hostPanel("dag-viewer", {
-        endpoint: "/api/reconciliation",
-      }),
     )],
   ),
 );
@@ -767,10 +892,8 @@ export const operationsView = rows(
 Create `scaffold-web/src/main/webui/src/views/iot.ts`:
 
 ```typescript
-import { rows, columns, dataTable, hostPanel, title } from "@casehubio/pages-ui";
+import { rows, columns, dataTable, title } from "@casehubio/pages-ui";
 import { lookup, col, groupBy } from "@casehubio/pages-ui";
-import { registerPanel } from "@casehubio/pages-runtime";
-import "@casehubio/blocks-ui-split-workbench";
 
 export const iotView = columns([4, 8],
   [dataTable({
@@ -807,15 +930,21 @@ export const iotView = columns([4, 8],
 Create `scaffold-web/src/main/webui/src/views/notifications.ts`:
 
 ```typescript
-import { hostPanel } from "@casehubio/pages-ui";
+import { tabs, hostPanel } from "@casehubio/pages-ui";
 import { registerPanel } from "@casehubio/pages-runtime";
 import "@casehubio/blocks-ui-notification-inbox";
 
 registerPanel("notification-inbox", "blocks-notification-inbox");
+registerPanel("notification-preferences", "blocks-notification-preferences");
 
-export const notificationsView = hostPanel("notification-inbox", {
-  endpoint: "/notifications",
-});
+export const notificationsView = tabs(
+  ["Inbox", hostPanel("notification-inbox", {
+    endpoint: "/notifications",
+  })],
+  ["Preferences", hostPanel("notification-preferences", {
+    endpoint: "/subscriptions",
+  })],
+);
 ```
 
 - [ ] **Step 10: Create sessions.ts**
@@ -839,16 +968,21 @@ export const sessionsView = hostPanel("session-workbench", {
 Create `scaffold-web/src/main/webui/src/views/system.ts`:
 
 ```typescript
-import { rows, tabs, hostPanel, dataTable, title } from "@casehubio/pages-ui";
-import { lookup, col, groupBy } from "@casehubio/pages-ui";
+import { tabs, hostPanel } from "@casehubio/pages-ui";
 import { registerPanel } from "@casehubio/pages-runtime";
 import "@casehubio/blocks-ui-case-explorer";
+import "@casehubio/blocks-ui-preferences-editor";
 import "@casehubio/blocks-ui-kpi-metric-row";
 
+registerPanel("case-definition-browser", "blocks-case-definition-browser");
+registerPanel("preferences-editor", "blocks-preferences-editor");
+
 export const systemView = tabs(
-  ["Definitions", hostPanel("case-explorer", {
-    entityTypes: "definitions-only",
-    endpoint: "/api/v1",
+  ["Definitions", hostPanel("case-definition-browser", {
+    endpoint: "/api/v1/definitions",
+  })],
+  ["Preferences", hostPanel("preferences-editor", {
+    endpoint: "/api/preferences",
   })],
   ["Health", hostPanel("kpi-metric-row", {
     endpoint: "/q/health",
@@ -861,8 +995,9 @@ export const systemView = tabs(
 Replace `scaffold-web/src/main/webui/src/index.ts`:
 
 ```typescript
-import { loadSite, registerPanel } from "@casehubio/pages-runtime";
+import { loadSite } from "@casehubio/pages-runtime";
 import { page, tabs } from "@casehubio/pages-ui";
+import type { Component } from "@casehubio/pages-component";
 import { createDatasets } from "./datasets";
 import { casesView } from "./views/cases";
 import { workItemsView } from "./views/work-items";
@@ -875,7 +1010,7 @@ import { notificationsView } from "./views/notifications";
 import { sessionsView } from "./views/sessions";
 import { systemView } from "./views/system";
 
-type TabEntry = [string, unknown];
+type TabEntry = [string, Component];
 
 async function start() {
   const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -931,19 +1066,20 @@ Expected: 8 tabs visible (OPS and IoT hidden since modules not on classpath). Cl
 git add scaffold-web/src/main/webui/src/
 git commit -m "feat: wire all 10 tab views — cases, work items, queues, orchestration, trust, ops, iot, notifications, sessions, system
 
-Refs #N"
+Closes casehubio/scaffold#45"
 ```
 
 ---
 
-### Task 5: Add URL hash navigation for cross-tab deep-linking
+### Task 5: Add URL hash navigation for cross-tab deep-linking (#46)
 
 **Files:**
 - Create: `scaffold-web/src/main/webui/src/navigation.ts`
 - Modify: `scaffold-web/src/main/webui/src/index.ts`
 
 **Interfaces:**
-- Consumes: pages' `loadSite()` return value (Site object with tab API)
+- Consumes: `LiveSite.navigate(path)` from pages-runtime (walks component tree using slot names / tab labels)
+- Consumes: `emitPagesEvent(target: EventTarget, topic: string, payload: T)` from `@casehubio/pages-component`
 - Produces: URL hash routing — `#/cases/abc-123` navigates to Cases tab with entity selected
 
 - [ ] **Step 1: Create navigation.ts**
@@ -952,6 +1088,7 @@ Create `scaffold-web/src/main/webui/src/navigation.ts`:
 
 ```typescript
 import { emitPagesEvent } from "@casehubio/pages-component";
+import type { LiveSite } from "@casehubio/pages-runtime";
 
 interface NavigationState {
   tab: string;
@@ -971,7 +1108,7 @@ const TAB_TOPICS: Record<string, string> = {
   "system": "system",
 };
 
-const TAB_LABELS: Record<string, string> = {
+const SLUG_TO_LABEL: Record<string, string> = {
   "cases": "Cases",
   "work-items": "Work Items",
   "queues": "Queues",
@@ -994,17 +1131,19 @@ export function buildHash(tab: string, entityId?: string): string {
   return entityId ? `#/${tab}/${entityId}` : `#/${tab}`;
 }
 
-export function setupNavigation(site: { selectTab(label: string): void }) {
+export function setupNavigation(site: LiveSite, appContainer: HTMLElement) {
   function navigate() {
     const state = parseHash(location.hash);
     if (!state) return;
-    const label = TAB_LABELS[state.tab];
-    if (label) site.selectTab(label);
+    const label = SLUG_TO_LABEL[state.tab];
+    if (label) {
+      site.navigate(label);
+    }
     if (state.entityId) {
       const topic = TAB_TOPICS[state.tab];
       if (topic) {
         setTimeout(() => {
-          emitPagesEvent(`${topic}:selected`, { id: state.entityId });
+          emitPagesEvent(appContainer, `${topic}:selected`, { id: state.entityId });
         }, 100);
       }
     }
@@ -1017,13 +1156,16 @@ export function setupNavigation(site: { selectTab(label: string): void }) {
 
 - [ ] **Step 2: Wire navigation into index.ts**
 
-Add to `index.ts` after `loadSite`:
+Add import to the top of `index.ts`:
 
 ```typescript
 import { setupNavigation } from "./navigation";
+```
 
-// ... inside start(), after const site = await loadSite(container, app):
-    setupNavigation(site);
+Add after `const site = await loadSite(container, app);`:
+
+```typescript
+    setupNavigation(site, container);
 ```
 
 - [ ] **Step 3: Verify hash navigation**
@@ -1035,6 +1177,8 @@ Expected: Orchestration tab is active on load
 Open: `http://localhost:8080#/sessions`
 Expected: Sessions tab is active on load
 
+Change URL to `#/cases` — tab switches without page reload.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -1042,12 +1186,12 @@ git add scaffold-web/src/main/webui/src/navigation.ts
 git add scaffold-web/src/main/webui/src/index.ts
 git commit -m "feat: add URL hash navigation for cross-tab deep-linking
 
-Refs #N"
+Closes casehubio/scaffold#46"
 ```
 
 ---
 
-### Task 6: Final verification and cleanup
+### Task 6: Final verification and build cleanup (#47)
 
 **Files:**
 - Modify: `scaffold-web/src/main/webui/.gitignore` (if needed)
@@ -1073,16 +1217,37 @@ Ensure these are gitignored:
 - `scaffold-web/src/main/webui/dist/`
 - `scaffold-web/src/main/webui/.casehub-packages/`
 
+Run `git status` — none of the above should appear as untracked.
+
 - [ ] **Step 4: Run full test suite**
 
 Run: `mvn --batch-mode test -pl scaffold-backend`
 Expected: All existing tests pass unchanged
 
-- [ ] **Step 5: Commit any cleanup**
+- [ ] **Step 5: Update CLAUDE.md build commands**
+
+Update the Build Commands section in CLAUDE.md to reflect multi-module:
+
+```markdown
+## Build Commands
+
+```bash
+# Build all modules
+mvn --batch-mode install
+
+# Build backend only (headless — no web console)
+mvn --batch-mode install -pl scaffold-backend -am
+
+# Skip tests
+mvn --batch-mode install -DskipTests
+```
+```
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
-git commit -m "chore: final cleanup — gitignore, build verification
+git commit -m "chore: final verification — gitignore, build docs, CI cleanup
 
-Refs #N"
+Closes casehubio/scaffold#47"
 ```
