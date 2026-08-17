@@ -1,0 +1,15 @@
+# Work Plan — issue-48-console-orchestration-queues
+
+## State
+branch: issue-48-console-orchestration-queues
+state: scaffolded
+project-sha: 521b37c74af11d817e0820603fcf287538d61c4e
+date: 2026-08-17
+issue-repo: casehubio/scaffold
+covers: 48,49
+design-repo: workspace
+design-section-hashes: 
+flyway-next-v: none
+
+## Queue
+- [ ] #48 — Issue #48 ← active
