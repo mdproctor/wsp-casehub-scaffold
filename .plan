@@ -12,4 +12,7 @@ design-section-hashes:
 flyway-next-v: none
 
 ## Queue
-- [ ] #48 — Issue #48 ← active
+- [ ] #49 — Queues tab: wire to enriched endpoints ← active
+
+## Deferred
+- [ ] #48 — Orchestration workbench wiring (blocked on engine#921)
