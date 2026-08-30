@@ -1,1 +1,3 @@
 scaffold:issue-41-platform-console=merged
+default=promoted
+scaffold:issue-48-console-orchestration-queues=stamped

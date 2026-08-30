@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-48-console-orchestration-queues
-state: scaffolded
+state: closing:stamped
 project-sha: 521b37c74af11d817e0820603fcf287538d61c4e
 date: 2026-08-17
 issue-repo: casehubio/scaffold
@@ -11,5 +11,6 @@ design-repo: workspace
 design-section-hashes: 
 flyway-next-v: none
 
+evidence-era: true
 ## Queue
 - [ ] casehubio/scaffold#49 — Queues tab: wire to enriched endpoints ← active

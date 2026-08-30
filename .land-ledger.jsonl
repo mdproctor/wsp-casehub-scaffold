@@ -1,0 +1,2 @@
+{"event":"promote","branch":"issue-48-console-orchestration-queues","files":[],"timestamp":"2026-08-30T22:06:33.966193+00:00"}
+{"event":"land","repo":"scaffold","branch":"issue-48-console-orchestration-queues","base_branch":"main","landed_sha":"4edb3bdf0962dc8f0ac6987e637f6b03e184e06c","push_target":"upstream","mirrored":true,"stamped":true,"timestamp":"2026-08-30T22:07:43.507406+00:00"}
