@@ -12,7 +12,4 @@ design-section-hashes:
 flyway-next-v: none
 
 ## Queue
-- [ ] #49 — Queues tab: wire to enriched endpoints ← active
-
-## Deferred
-- [ ] #48 — Orchestration workbench wiring (blocked on engine#921)
+- [ ] casehubio/scaffold#49 — Queues tab: wire to enriched endpoints ← active
