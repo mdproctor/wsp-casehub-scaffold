@@ -1,0 +1,15 @@
+# Work Plan — issue-50-console-tab-fixes
+
+## State
+branch: issue-50-console-tab-fixes
+state: scaffolded
+project-sha: 
+date: 
+issue-repo: casehubio/scaffold
+covers: 50,51
+design-repo: 
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
+- [ ] casehubio/scaffold#50 — Issue #50 ← active
