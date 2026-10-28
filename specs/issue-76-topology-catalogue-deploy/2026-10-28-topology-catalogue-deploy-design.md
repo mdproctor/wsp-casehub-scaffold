@@ -131,7 +131,7 @@ Returns:
     "resumptions": [],
     "empty": false
   },
-  "playbookYaml": "- block:\n    label: \"Deploy manifest\"\n    steps:\n      ...",
+  "playbookYaml": "- step: \"Provision manifest service\"\n  block:\n    - provision-node:\n        value: manifest\n        ...",
   "readme": "# Level 01: Hello LLM\n\nDeploy a complete LLM app..."
 }
 ```
@@ -225,25 +225,37 @@ The plan endpoint requires compilation logic currently embedded in
    ```
 
 4. **`playbook.yaml`** — structured deployment walkthrough steps in
-   pages step-viewer format. Uses `block`, `parallel`, and `plugin`
-   step kinds to describe the deployment procedure:
+   pages step-viewer format, parsed by `Walker.resolve()` from
+   `@casehubio/yaml-core/step`. Uses `block` and `plugin` step kinds
+   to describe the deployment procedure. The `step:` key provides the
+   display name; `block:` takes an array of sub-steps (not an object):
    ```yaml
-   - block:
-       label: "Provision manifest service"
-       steps:
-         - provision-node:
-             value: manifest
-             type: casehub_application
-   - block:
-       label: "Provision eidos (depends on manifest)"
-       steps:
-         - provision-node:
-             value: eidos
-             type: casehub_application
+   - step: "Provision manifest service"
+     block:
+       - provision-node:
+           value: manifest
+           type: casehub_application
+   - step: "Provision eidos (depends on manifest)"
+     block:
+       - provision-node:
+           value: eidos
+           type: casehub_application
+   - step: "Provision engine (depends on eidos)"
+     block:
+       - provision-node:
+           value: engine
+           type: casehub_application
+   - step: "Provision my-llm (depends on engine)"
+     block:
+       - provision-node:
+           value: my-llm
+           type: casehub_application
    ```
-   Parsed by the frontend via `Walker.resolve()` from
-   `@casehubio/yaml-core/step` to produce `ResolvedStep[]` for the
-   `<pages-step-viewer>` component.
+   Walker format constraints: `block:` value must be an array (not an
+   object). `steps` and `do` are removed keys that throw at parse time.
+   `label` is a decorator key, not a block name — use `step:` for
+   naming. The combined key syntax (`block Provision manifest:`) is
+   also valid.
 
 ### Frontend
 
