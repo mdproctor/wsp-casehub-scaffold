@@ -1,0 +1,22 @@
+# Work Plan — issue-76-topology-catalogue-deploy
+
+## State
+branch: issue-76-topology-catalogue-deploy
+state: active
+date: 2026-10-28
+issue-repo: casehubio/scaffold
+covers: 76
+design-repo: project
+
+## Queue
+- [ ] casehubio/scaffold#76 — Topology catalogue + deploy ← active
+  - [ ] Batch 1: Ops+DTOs
+    - [ ] Task 1: Extract compileTopology (ops)
+    - [ ] Task 2: Metadata+playbook files (ops)
+    - [ ] Task 3: Service interface+DTOs
+  - [ ] Batch 2: Backend
+    - [ ] Task 4: EmbeddedTopologyCatalogueService
+    - [ ] Task 5: TopologyCatalogueResource
+  - [ ] Batch 3: Frontend
+    - [ ] Task 6: Deploy tab restructure
+    - [ ] Task 7: Full build verification
