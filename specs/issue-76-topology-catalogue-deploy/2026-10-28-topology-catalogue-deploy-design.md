@@ -14,14 +14,19 @@ something to deploy.
 ## Goal
 
 Add a topology catalogue to the Deploy tab that lets users browse
-available topologies, see a deploy plan (terraform-style), and deploy
-with a single action that creates a case owning the full lifecycle.
+available topologies, see a playbook walkthrough via the mosaic step
+viewer, see a terraform-style deploy plan (preserving parallel execution
+layers), and deploy with a single action that creates a case owning the
+full lifecycle.
 
 ## Scope — Level 01 MVP
 
 One topology: ops Level 01 (hello-llm). Four nodes: manifest, eidos,
 engine, my-llm. The feature works end-to-end for this single topology.
-Multi-topology catalogue and tutorial progression are follow-up work.
+
+Deferred items captured as GitHub issues:
+- casehubio/scaffold#TBD — Multi-topology catalogue and tutorial progression
+- casehubio/scaffold#TBD — Client impl for TopologyCatalogueService
 
 ## Architecture
 
@@ -30,10 +35,10 @@ Deploy Tab (restructured)
 ├── Catalogue section (top)
 │   └── dataTable: available topologies from filesystem
 ├── Detail view (on selection)
-│   ├── Left panel: README.md rendered as markdown
+│   ├── Left panel: mosaic step viewer (playbook walkthrough)
 │   ├── Right panel
 │   │   ├── DAG diagram (graph-renderer) — nodes + dependencies
-│   │   └── Plan table — name, type, action, dependsOn, order
+│   │   └── Plan table — layered steps showing parallel tiers
 │   └── [Deploy] button
 └── Records section (bottom, existing)
     ├── Deployments table
@@ -43,34 +48,47 @@ Deploy Tab (restructured)
 ### Backend
 
 Three new REST endpoints on `TopologyCatalogueResource` at
-`/api/scaffold/topologies`:
+`/api/scaffold/catalogue`:
 
-**1. `GET /api/scaffold/topologies`** — List available topologies
+**1. `GET /api/scaffold/catalogue`** — List available topologies
 
 Delegates to `TopologyCompilerService.listTopologies()` which scans
-the directory at `casehub.ops.topology.path`. Returns:
+the directory at `casehub.ops.topology.path`. Enriches each entry with
+metadata parsed from `topology-metadata.yaml` in each topology
+directory.
 
+The metadata file is a structured YAML file:
+```yaml
+description: "Deploy a complete LLM app with four services"
+methodologyStep: "DEPLOY — First App"
+prerequisites: "None"
+level: 1
+```
+
+Returns:
 ```json
 [
   {
     "name": "01-hello-llm",
-    "path": "/path/to/topologies/deployment/01-hello-llm",
-    "source": "filesystem"
+    "description": "Deploy a complete LLM app with four services",
+    "methodologyStep": "DEPLOY — First App",
+    "prerequisites": "None"
   }
 ]
 ```
 
-Enriches each entry with metadata parsed from the README.md header
-comments (Level number, methodology step, prerequisites, description).
+**2. `GET /api/scaffold/catalogue/{name}/plan`** — Compile and plan
 
-**2. `GET /api/scaffold/topologies/{name}/plan`** — Compile and plan
+Compiles the topology via `TopologyCompilerService.compileTopology(name)`.
+This is a new method extracted from the existing `deploy()` logic — it
+iterates all YAML files in the topology directory, compiles each via
+`compileDomain()`, and composes the results into a single
+`DesiredStateGraph` via `GRAPH_FACTORY.of(allNodes, allDeps)`.
 
-Compiles the topology YAML via `TopologyCompilerService.compileDomain()`.
 Runs `TransitionPlanner.plan(graph, new ActualState(Map.of()))` to
 produce the deploy plan against an empty actual state (fresh deployment).
 
 Returns:
-
 ```json
 {
   "graph": {
@@ -88,27 +106,39 @@ Returns:
   },
   "plan": {
     "additions": [
-      {"order": 1, "nodeId": "manifest", "action": "ADD", "type": "casehub_application"},
-      {"order": 2, "nodeId": "eidos", "action": "ADD", "type": "casehub_application"},
-      {"order": 3, "nodeId": "engine", "action": "ADD", "type": "casehub_application"},
-      {"order": 4, "nodeId": "my-llm", "action": "ADD", "type": "casehub_application"}
+      [{"nodeId": "manifest", "action": "PROVISION", "type": "casehub_application"}],
+      [{"nodeId": "eidos", "action": "PROVISION", "type": "casehub_application"}],
+      [{"nodeId": "engine", "action": "PROVISION", "type": "casehub_application"}],
+      [{"nodeId": "my-llm", "action": "PROVISION", "type": "casehub_application"}]
     ],
     "removals": [],
+    "suspensions": [],
+    "resumptions": [],
     "empty": false
   },
   "readme": "# Level 01: Hello LLM\n\nDeploy a complete LLM app..."
 }
 ```
 
+Each element of the outer list in `additions` is a **layer** — steps
+within the same layer can execute in parallel, and layers execute in
+sequence (layer 0 completes before layer 1 starts). For Level 01's
+linear dependency chain, each layer has exactly one step.
+
 The `graph` field feeds the DAG diagram. The `plan` field feeds the
-plan table. The `readme` field feeds the markdown walkthrough panel.
+plan table. The `readme` field feeds the step viewer's content.
 
-**3. `POST /api/scaffold/topologies/{name}/deploy`** — Deploy and create case
+**3. `POST /api/scaffold/catalogue/{name}/deploy`** — Deploy and create case
 
-Two actions in sequence:
+Pre-check: calls `TopologyCompilerService.isRunning(tenancyId, name)`
+to verify this topology is not already deployed. Returns 409 Conflict
+if already running.
 
-1. `TopologyCompilerService.deploy(tenancyId, basePath, name)` —
-   compiles the YAML and starts the reconciliation loop
+Two actions in sequence with failure compensation:
+
+1. `TopologyCompilerService.deploy(tenancyId, name)` —
+   compiles the YAML and starts the reconciliation loop, returns
+   the loopKey
 2. `EngineCaseApi.startCase(request, tenancyId)` — creates an
    `application-lifecycle` case with context:
    ```json
@@ -118,16 +148,45 @@ Two actions in sequence:
      "version": "1.0.0",
      "context": {
        "topologyName": "01-hello-llm",
-       "applicationId": "<generated-uuid>"
+       "applicationId": "01-hello-llm"
      }
    }
    ```
+
+   The `applicationId` is set to the topology name (not a random UUID)
+   to provide a stable, deterministic identifier for CBR feature
+   matching across deployments of the same topology. The
+   `application-lifecycle.yaml` case definition references
+   `.applicationId` as a CBR feature.
+
+Failure compensation: if `startCase()` fails after `deploy()` succeeds,
+the endpoint calls `TopologyCompilerService.stop(tenancyId, name)` to
+halt the orphaned reconciliation loop before propagating the error.
 
 Returns `{ "caseId": "<uuid>", "loopKey": "topology:<tenancyId>:01-hello-llm" }`.
 
 The case owns the lifecycle from this point — drift detection,
 scaling events, incidents, and approvals all flow through sub-case
 bindings defined in `application-lifecycle.yaml`.
+
+### Cross-repo changes (casehub-ops)
+
+The plan endpoint requires compilation logic currently embedded in
+`TopologyCompilerService.deploy()`. Two changes to the ops repo:
+
+1. **Extract `compileTopology(String name)`** — moves the multi-file
+   YAML iteration, per-file `compileDomain()` calls, and graph
+   composition into a reusable method. Uses the injected
+   `casehub.ops.topology.path` config for directory resolution.
+
+2. **Change `deploy()` return type from `void` to `String`** — returns
+   the loopKey (`"topology:" + tenancyId + ":" + topologyName`) so
+   callers don't need to reconstruct the naming convention.
+
+The simplified `deploy()` signature becomes:
+```java
+public String deploy(String tenancyId, String topologyName)
+```
 
 ### Frontend
 
@@ -136,7 +195,7 @@ bindings defined in `application-lifecycle.yaml`.
 Top section — topology catalogue:
 ```typescript
 dataTable({
-  lookup: lookup("topologies", groupBy(null,
+  lookup: lookup("catalogue", groupBy(null,
     col("name", "Topology"),
     col("description", "Description"),
     col("methodologyStep", "Step"),
@@ -147,9 +206,11 @@ dataTable({
 ```
 
 On selection — detail panel (new component or inline expansion):
-- Left: rendered markdown from the `readme` field
+- Left: mosaic step viewer rendering the README walkthrough as
+  structured steps with progression tracking
 - Right top: `graph-renderer` DAG showing nodes and dependency edges
-- Right bottom: plan table showing ordered deployment steps
+- Right bottom: plan table showing layered deployment steps with
+  tier indicators for parallel execution
 - Deploy button: POST to deploy endpoint, then navigate to Cases tab
 
 Bottom section — existing deployment records and approvals tables
@@ -157,9 +218,9 @@ Bottom section — existing deployment records and approvals tables
 
 **New datasets in app.yaml:**
 ```yaml
-topologies:
-  endpoint: /api/scaffold/topologies
-  source: topology-service
+catalogue:
+  endpoint: /api/scaffold/catalogue
+  source: topology-catalogue-service
 ```
 
 The plan and readme are fetched on-demand when a topology is selected
@@ -184,13 +245,19 @@ Records:
 - `GraphView(List<GraphNode> nodes, List<GraphEdge> dependencies)`
 - `GraphNode(String id, String type, List<String> dependsOn)`
 - `GraphEdge(String from, String to)`
-- `PlanView(List<PlanStep> additions, List<PlanStep> removals, boolean empty)`
-- `PlanStep(int order, String nodeId, String action, String type)`
+- `PlanView(List<List<PlanStep>> additions, List<List<PlanStep>> removals, List<List<PlanStep>> suspensions, List<List<PlanStep>> resumptions, boolean empty)`
+- `PlanStep(String nodeId, String action, String type)`
 - `DeployResult(UUID caseId, String loopKey)`
 
 `EmbeddedTopologyCatalogueService` injects `TopologyCompilerService`,
-`TransitionPlanner`, and `EngineCaseApi`. Client impl deferred — the
-catalogue is inherently local to the scaffold instance.
+`TransitionPlanner`, and `EngineCaseApi`. The embedded impl injects
+`EngineCaseApi` directly for case creation — this follows the same
+pattern as `EmbeddedCaseService` which also injects `EngineCaseApi`
+directly. The deploy operation is cohesive: creating the reconciliation
+loop and its lifecycle case is a single atomic action from the
+catalogue's perspective.
+
+Client impl deferred — tracked as casehubio/scaffold#TBD.
 
 ### Testing
 
@@ -198,15 +265,18 @@ catalogue is inherently local to the scaffold instance.
   (follows `CaseResourceTest` pattern)
 - `EmbeddedTopologyCatalogueServiceTest` — unit test with mocked
   `TopologyCompilerService` and `EngineCaseApi`, verifies plan
-  generation and deploy-with-case-creation flow
+  generation with layered structure and deploy-with-case-creation flow
+  including failure compensation
 - Integration test: compile Level 01 YAML → verify graph has 4 nodes →
-  verify plan has 4 additions in dependency order
+  verify plan has 4 addition layers with 1 step each in dependency order
+  → verify all four dimensions present (additions, removals, suspensions,
+  resumptions)
 
 ## References
 
-- `ops/service/src/main/java/io/casehub/ops/service/topology/TopologyCompilerService.java` — existing compiler
+- `ops/service/src/main/java/io/casehub/ops/service/topology/TopologyCompilerService.java` — existing compiler (cross-repo changes needed)
 - `desiredstate/runtime-core/src/main/java/io/casehub/desiredstate/runtime/TransitionPlanner.java` — plan generation
-- `desiredstate/api/src/main/java/io/casehub/desiredstate/api/TransitionPlan.java` — plan data model
+- `desiredstate/api/src/main/java/io/casehub/desiredstate/api/TransitionPlan.java` — plan data model (List<List<OrderedStep>> per dimension)
 - `desiredstate/api/src/main/java/io/casehub/desiredstate/api/DesiredStateGraph.java` — graph interface
 - `scaffold-backend/src/main/resources/casehub/ops/application-lifecycle.yaml` — case definition
 - `mosaic/packages/graph-renderer/` — DAG visualisation component
