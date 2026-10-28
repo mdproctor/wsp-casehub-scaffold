@@ -35,7 +35,7 @@ Deploy Tab (restructured)
 ├── Catalogue section (top)
 │   └── dataTable: available topologies from filesystem
 ├── Detail view (on selection)
-│   ├── Left panel: mosaic step viewer (playbook walkthrough)
+│   ├── Left panel: pages-step-viewer (playbook walkthrough from playbook.yaml)
 │   ├── Right panel
 │   │   ├── DAG diagram (graph-renderer) — nodes + dependencies
 │   │   └── Plan table — layered steps showing parallel tiers
@@ -79,14 +79,29 @@ Returns:
 
 **2. `GET /api/scaffold/catalogue/{name}/plan`** — Compile and plan
 
-Compiles the topology via `TopologyCompilerService.compileTopology(name)`.
-This is a new method extracted from the existing `deploy()` logic — it
-iterates all YAML files in the topology directory, compiles each via
-`compileDomain()`, and composes the results into a single
-`DesiredStateGraph` via `GRAPH_FACTORY.of(allNodes, allDeps)`.
+Three operations:
 
-Runs `TransitionPlanner.plan(graph, new ActualState(Map.of()))` to
-produce the deploy plan against an empty actual state (fresh deployment).
+1. `TopologyCompilerService.compileTopology(name)` — compiles the
+   topology into a `DesiredStateGraph`. This is a new method extracted
+   from the existing `deploy()` logic — it iterates all YAML files in
+   the topology directory, compiles each via `compileDomain()`, and
+   composes the results into a single `DesiredStateGraph` via
+   `GRAPH_FACTORY.of(allNodes, allDeps)`.
+
+2. `TransitionPlanner.plan(graph, new ActualState(Map.of()))` —
+   produces the deploy plan against an empty actual state (fresh
+   deployment).
+
+3. Read supplementary files from the topology directory (resolved via
+   `casehub.ops.topology.path` + `/{name}/`):
+   - `README.md` — supplementary documentation (raw markdown string)
+   - `playbook.yaml` — structured deployment walkthrough steps for
+     `<pages-step-viewer>` (raw YAML string)
+
+   The service layer reads these files directly from the topology
+   directory. Neither `compileTopology()` nor `TransitionPlanner`
+   handles these — file reading is the catalogue service's
+   responsibility.
 
 Returns:
 ```json
@@ -116,6 +131,7 @@ Returns:
     "resumptions": [],
     "empty": false
   },
+  "playbookYaml": "- block:\n    label: \"Deploy manifest\"\n    steps:\n      ...",
   "readme": "# Level 01: Hello LLM\n\nDeploy a complete LLM app..."
 }
 ```
@@ -126,7 +142,11 @@ sequence (layer 0 completes before layer 1 starts). For Level 01's
 linear dependency chain, each layer has exactly one step.
 
 The `graph` field feeds the DAG diagram. The `plan` field feeds the
-plan table. The `readme` field feeds the step viewer's content.
+plan table. The `playbookYaml` field is parsed by the frontend via
+`Walker.resolve()` from `@casehubio/yaml-core/step` to produce
+`ResolvedStep[]` for `<pages-step-viewer>`. The `readme` field is
+rendered separately via a standard markdown renderer for supplementary
+documentation.
 
 **3. `POST /api/scaffold/catalogue/{name}/deploy`** — Deploy and create case
 
@@ -172,21 +192,58 @@ bindings defined in `application-lifecycle.yaml`.
 ### Cross-repo changes (casehub-ops)
 
 The plan endpoint requires compilation logic currently embedded in
-`TopologyCompilerService.deploy()`. Two changes to the ops repo:
+`TopologyCompilerService.deploy()`. Changes to the ops repo:
+
+**API changes to `TopologyCompilerService`:**
 
 1. **Extract `compileTopology(String name)`** — moves the multi-file
    YAML iteration, per-file `compileDomain()` calls, and graph
    composition into a reusable method. Uses the injected
    `casehub.ops.topology.path` config for directory resolution.
+   Returns `DesiredStateGraph`:
+   ```java
+   public DesiredStateGraph compileTopology(String name)
+   ```
 
 2. **Change `deploy()` return type from `void` to `String`** — returns
    the loopKey (`"topology:" + tenancyId + ":" + topologyName`) so
-   callers don't need to reconstruct the naming convention.
+   callers don't need to reconstruct the naming convention:
+   ```java
+   public String deploy(String tenancyId, String topologyName)
+   ```
 
-The simplified `deploy()` signature becomes:
-```java
-public String deploy(String tenancyId, String topologyName)
-```
+**New files in Level 01 topology directory**
+(`ops/topology-tests/src/test/resources/topologies/deployment/01-hello-llm/`):
+
+3. **`topology-metadata.yaml`** — structured metadata for the
+   catalogue listing:
+   ```yaml
+   description: "Deploy a complete LLM app with four services"
+   methodologyStep: "DEPLOY — First App"
+   prerequisites: "None"
+   level: 1
+   ```
+
+4. **`playbook.yaml`** — structured deployment walkthrough steps in
+   pages step-viewer format. Uses `block`, `parallel`, and `plugin`
+   step kinds to describe the deployment procedure:
+   ```yaml
+   - block:
+       label: "Provision manifest service"
+       steps:
+         - provision-node:
+             value: manifest
+             type: casehub_application
+   - block:
+       label: "Provision eidos (depends on manifest)"
+       steps:
+         - provision-node:
+             value: eidos
+             type: casehub_application
+   ```
+   Parsed by the frontend via `Walker.resolve()` from
+   `@casehubio/yaml-core/step` to produce `ResolvedStep[]` for the
+   `<pages-step-viewer>` component.
 
 ### Frontend
 
@@ -206,8 +263,13 @@ dataTable({
 ```
 
 On selection — detail panel (new component or inline expansion):
-- Left: mosaic step viewer rendering the README walkthrough as
-  structured steps with progression tracking
+- Left: `<pages-step-viewer>` rendering the `playbookYaml` field.
+  The frontend parses the raw YAML string via
+  `parse(playbookYaml)` → `Walker.resolve(steps, catalog)` →
+  `ResolvedStep[]`, then passes the resolved steps to the
+  component's `.steps` property. Below the step viewer, the
+  `readme` field is rendered via a standard markdown renderer for
+  supplementary documentation.
 - Right top: `graph-renderer` DAG showing nodes and dependency edges
 - Right bottom: plan table showing layered deployment steps with
   tier indicators for parallel execution
@@ -223,8 +285,8 @@ catalogue:
   source: topology-catalogue-service
 ```
 
-The plan and readme are fetched on-demand when a topology is selected
-(not preloaded in the dataset).
+The plan, playbook, and readme are fetched on-demand when a topology
+is selected (not preloaded in the dataset).
 
 ### Service Layer
 
@@ -241,7 +303,7 @@ public interface TopologyCatalogueService {
 
 Records:
 - `TopologyEntry(String name, String description, String methodologyStep, String prerequisites)`
-- `TopologyPlan(GraphView graph, PlanView plan, String readme)`
+- `TopologyPlan(GraphView graph, PlanView plan, String playbookYaml, String readme)`
 - `GraphView(List<GraphNode> nodes, List<GraphEdge> dependencies)`
 - `GraphNode(String id, String type, List<String> dependsOn)`
 - `GraphEdge(String from, String to)`
@@ -279,6 +341,7 @@ Client impl deferred — tracked as casehubio/scaffold#TBD.
 - `desiredstate/api/src/main/java/io/casehub/desiredstate/api/TransitionPlan.java` — plan data model (List<List<OrderedStep>> per dimension)
 - `desiredstate/api/src/main/java/io/casehub/desiredstate/api/DesiredStateGraph.java` — graph interface
 - `scaffold-backend/src/main/resources/casehub/ops/application-lifecycle.yaml` — case definition
+- `scaffold-backend/src/main/webui/.casehub-packages/packages/pages-step-viewer/` — playbook walkthrough component (accepts `ResolvedStep[]`)
 - `mosaic/packages/graph-renderer/` — DAG visualisation component
 - `ops/topology-tests/src/test/resources/topologies/deployment/01-hello-llm/` — Level 01 YAML
 - casehubio/scaffold#76
