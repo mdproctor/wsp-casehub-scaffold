@@ -12,6 +12,19 @@
 **Exploration:** quick
 **Status:** captured
 
+## D5: Deploy tab layout
+
+**Choice:** Catalogue above, records below
+**Alternatives:**
+- Separate Catalogue tab — cleaner separation but more navigation
+- Replace Deploy tab entirely — deployed topologies surface in Fleet/Cases
+**Rationale:** Natural flow: browse → deploy → monitor. The catalogue is the front door, the records are the result. Keeping them together shows cause and effect.
+**Trade-offs:** Deploy tab gets taller — may need collapsible sections
+**Depends on:** D2 (graph visualisation — detail view needs the DAG + table)
+**Sources:** current deploy.ts layout
+**Exploration:** quick
+**Status:** captured
+
 ## D2: Desired-state graph visualisation
 
 **Choice:** Both — table as primary view, DAG diagram as secondary visual
@@ -21,6 +34,19 @@
 **Rationale:** The table shows deploy plan detail (terraform-style), the DAG shows the shape at a glance. Both are useful and the data source is the same.
 **Trade-offs:** More frontend work — need to integrate mosaic graph-renderer alongside pages-ui dataTable
 **Sources:** mosaic graph-core, graph-renderer, DesiredStateGraph API
+**Exploration:** quick
+**Status:** captured
+
+## D5: Deploy tab layout
+
+**Choice:** Catalogue above, records below
+**Alternatives:**
+- Separate Catalogue tab — cleaner separation but more navigation
+- Replace Deploy tab entirely — deployed topologies surface in Fleet/Cases
+**Rationale:** Natural flow: browse → deploy → monitor. The catalogue is the front door, the records are the result. Keeping them together shows cause and effect.
+**Trade-offs:** Deploy tab gets taller — may need collapsible sections
+**Depends on:** D2 (graph visualisation — detail view needs the DAG + table)
+**Sources:** current deploy.ts layout
 **Exploration:** quick
 **Status:** captured
 
@@ -36,6 +62,19 @@
 **Exploration:** quick
 **Status:** captured
 
+## D5: Deploy tab layout
+
+**Choice:** Catalogue above, records below
+**Alternatives:**
+- Separate Catalogue tab — cleaner separation but more navigation
+- Replace Deploy tab entirely — deployed topologies surface in Fleet/Cases
+**Rationale:** Natural flow: browse → deploy → monitor. The catalogue is the front door, the records are the result. Keeping them together shows cause and effect.
+**Trade-offs:** Deploy tab gets taller — may need collapsible sections
+**Depends on:** D2 (graph visualisation — detail view needs the DAG + table)
+**Sources:** current deploy.ts layout
+**Exploration:** quick
+**Status:** captured
+
 ## D4: Case creation on deploy
 
 **Choice:** Create application-lifecycle case on deploy
@@ -45,5 +84,18 @@
 **Trade-offs:** More wiring — need to start a case via EngineCaseApi alongside the reconciliation loop
 **Depends on:** D3 (topology source — need the compiled graph to know what case to create)
 **Sources:** application-lifecycle.yaml, EngineCaseApi.startCase(), TopologyCompilerService.deploy()
+**Exploration:** quick
+**Status:** captured
+
+## D5: Deploy tab layout
+
+**Choice:** Catalogue above, records below
+**Alternatives:**
+- Separate Catalogue tab — cleaner separation but more navigation
+- Replace Deploy tab entirely — deployed topologies surface in Fleet/Cases
+**Rationale:** Natural flow: browse → deploy → monitor. The catalogue is the front door, the records are the result. Keeping them together shows cause and effect.
+**Trade-offs:** Deploy tab gets taller — may need collapsible sections
+**Depends on:** D2 (graph visualisation — detail view needs the DAG + table)
+**Sources:** current deploy.ts layout
 **Exploration:** quick
 **Status:** captured
