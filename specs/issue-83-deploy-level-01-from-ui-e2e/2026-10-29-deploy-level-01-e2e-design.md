@@ -6,16 +6,46 @@
 
 ## Overview
 
-Make it possible to select a topology in the Deploy tab, click Deploy, and have Level 01 actually provision via Podman. Three workstreams converge on end-to-end verification.
+Make it possible to select a topology in the Deploy tab, click Deploy, and have Level 01 actually provision via Podman. Five workstreams — two CI health prerequisites discovered during design, plus three feature workstreams — converge on end-to-end verification.
 
 ### Dependency graph
 
 ```
-#85 (land cross-repo branches) ──→ #86 (target routing + images)
-#84 (UI selection + deploy button) ──→ end-to-end verification
+W0a (fix reactor build) ──→ W2 (#85 land branches) ──→ W3 (#86 target routing + images)
+W0b (scaffold CI trigger) ──→ W2 (#85 verify on CI)
+W1 (#84 UI selection) ─────────────────────────────────→ end-to-end verification
 ```
 
-#84 and #85 are independent and can run in parallel. #86 depends on #85 (needs the ops branch landed). End-to-end verification needs all three.
+W0a and W0b are prerequisites. W1 and W2 can run in parallel after W0a. W3 depends on W2. E2E verification needs W1, W2, and W3.
+
+---
+
+## Workstream 0a: Fix casehub-all reactor build (prerequisite)
+
+The casehub-all reactor build is red. All recent completed runs fail with:
+
+```
+Failed to execute goal io.casehub:casehub-platform-spring-generator:0.4-SNAPSHOT:generate
+  on project casehub-platform-registry-spring-jpa:
+  Jandex index not found at .../registry-jpa/target/classes/META-INF/jandex.idx.
+  Build the Quarkus module first.
+```
+
+**Root cause:** `registry-spring-jpa` depends on `registry-jpa`'s Jandex index at generate time, but the Quarkus module isn't built before the Spring generator runs. This is a build-order issue in the platform's `mvn-all.yml` or the module dependency declarations.
+
+**Fix:** Either add an explicit dependency from `registry-spring-jpa` to `registry-jpa` in the reactor POM so Maven orders them correctly, or ensure the convergence build runs the Quarkus modules first. Investigate the exact build ordering in the reactor workflow.
+
+**Repo:** `casehubio/platform` (the module) within `casehubio/casehub-all` (the reactor)
+
+---
+
+## Workstream 0b: Add push trigger to scaffold CI (prerequisite)
+
+Scaffold's `.github/workflows/maven.yml` triggers on `repository_dispatch`, `pull_request`, and `workflow_dispatch` — but **not on `push`**. The #76 commits were pushed directly to main and the Build and Publish workflow never fired. Scaffold's CI hasn't validated the current main.
+
+**Fix:** Add `push: branches: [main]` to the `on:` trigger block.
+
+**Repo:** `casehubio/scaffold`
 
 ---
 
@@ -83,7 +113,7 @@ Mechanical merge-and-install for two branches created during #76.
 - Push branch, merge to main
 - `mvn install -f ../ops/pom.xml -pl service -am -DskipTests`
 
-Both branches are ready — no review gate needed, just mechanical merge + install.
+Both branches are ready — mechanical merge + install. **Prerequisite:** reactor must be green (W0a) before merging, so integration can be validated.
 
 ---
 
@@ -160,10 +190,12 @@ Then `mvn package -Pcontainer -DskipTests` builds the image into the local Podma
 ## End-to-End Verification
 
 **Prerequisites:**
-1. Cross-repo branches landed (#85)
-2. Podman running (`podman machine start`)
-3. Container images built and available locally
-4. Scaffold rebuilt with updated deps
+1. Reactor green (W0a)
+2. Scaffold CI trigger fixed (W0b)
+3. Cross-repo branches landed and CI-validated (#85)
+4. Podman running (`podman machine start`)
+5. Container images built and available locally
+6. Scaffold rebuilt with updated deps
 
 **Steps:**
 1. Start scaffold in dev mode (`mvn quarkus:dev`)
@@ -187,12 +219,25 @@ Then `mvn package -Pcontainer -DskipTests` builds the image into the local Podma
 
 | Layer | Test | Type |
 |-------|------|------|
+| Reactor build | casehub-all CI — verify green after platform fix | CI |
+| Scaffold CI | Build and Publish — verify fires on push to main | CI |
 | selectionKey resolution | activation.test.ts — alias vs source ID | Unit |
 | actionButton wiring | Manual browser verification | Manual |
 | Target override config | CaseHubAppProvisionHandlerTest — verify override takes precedence | Unit |
 | Drift checker sync | CaseHubAppDriftCheckerTest — same override applies | Unit |
 | Podman deploy | PodmanDeploymentTargetLiveTest — existing, reuse | Integration |
 | End-to-end | Manual: dev mode → select → deploy → verify containers | Manual |
+
+---
+
+## Execution Sequence
+
+1. **W0a** — Fix reactor build (platform Jandex index ordering)
+2. **W0b** — Add push trigger to scaffold CI (can parallel with W0a)
+3. **W2** — Land cross-repo branches (#85), verify reactor green
+4. **W1** — Fix selectionKey + wire deploy button (#84) (can start in parallel with W2 after W0a)
+5. **W3** — Deployment target override + image builds (#86) (after W2)
+6. **E2E** — End-to-end verification (after W1 + W3)
 
 ---
 
@@ -211,3 +256,6 @@ Then `mvn package -Pcontainer -DskipTests` builds the image into the local Podma
 - `01-hello-llm.yaml` — Level 01 topology, 4 nodes, deploymentTarget: claudony
 - `platform/boundary-rules.md` — SPI implementations belong in deploying applications
 - `platform/capability-ownership.md` — topology compilation owned by casehub-ops
+- casehub-all CI run 40964406385 — reactor failure (Jandex index build order)
+- `.github/workflows/maven.yml` — scaffold CI trigger config (missing push trigger)
+- `casehub-platform-spring-generator:generate` — the Maven goal that requires Jandex index

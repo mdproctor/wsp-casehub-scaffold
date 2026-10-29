@@ -33,3 +33,28 @@
 **Sources:** PrebuiltImagePipeline.java (default @DefaultBean), ApplicationBuildPipeline.java (SPI), topology-test-on-dispatch.yml (image-pushed dispatch pattern), platform/boundary-rules.md (SPI implementations belong in deploying applications)
 **Exploration:** quick
 **Status:** captured
+
+## D4: Fix casehub-all reactor build before landing branches
+
+**Choice:** Fix the Jandex index build-order issue in platform's Spring convergence layer before merging #85 cross-repo branches, to ensure the reactor can validate the full integration
+**Alternatives:**
+- Land branches anyway and fix reactor separately — risks compounding failures, can't verify integration
+- Skip reactor validation and test locally only — local builds may miss cross-module issues
+**Rationale:** The reactor has been red for multiple runs (all recent completions show failure). The error is in `registry-spring-jpa` which can't find `registry-jpa`'s Jandex index — a build-order problem, not a code error. Landing #85 branches on a red reactor means we can't verify they don't introduce new failures.
+**Trade-offs:** Fixing a platform build-order issue blocks #83 progress, but without it there's no integration safety net.
+**Sources:** casehub-all CI run 40964406385 (failure log), platform/registry-spring-jpa pom.xml, casehub-platform-spring-generator:generate goal
+**Exploration:** quick
+**Depends on:** None (prerequisite for all downstream work)
+**Status:** captured
+
+## D5: Add push trigger to scaffold CI workflow
+
+**Choice:** Add `push: branches: [main]` to scaffold's `.github/workflows/maven.yml` triggers
+**Alternatives:**
+- Enforce PR-only merges — would work but requires branch protection changes and slows down the direct-push workflow currently used
+- Rely on casehub-all reactor only — scaffold-specific tests would only run as part of the full reactor, slower feedback
+**Rationale:** Scaffold's Build and Publish workflow triggers on `repository_dispatch`, `pull_request`, and `workflow_dispatch` — but not `push`. The #76 commits were pushed directly to main and the workflow never fired. Scaffold has been untested on CI since those commits landed.
+**Trade-offs:** Adding a push trigger means builds fire on every push to main (additional CI cost), but scaffold pushes are infrequent enough that this is negligible.
+**Sources:** .github/workflows/maven.yml trigger config, casehubio/scaffold CI run history (last Build and Publish: never visible in recent runs)
+**Exploration:** quick
+**Status:** captured
