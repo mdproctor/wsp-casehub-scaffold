@@ -13,3 +13,16 @@ flyway-next-v:
 
 ## Queue
 - [ ] casehubio/scaffold#83 — Issue #83 ← active
+  - [ ] Batch 1: CI Health
+    - [ ] Task 1: Fix reactor Jandex build order
+    - [ ] Task 2: Add push trigger to scaffold CI
+  - [ ] Batch 2: Land Branches
+    - [ ] Task 3: Merge engine and ops branches
+  - [ ] Batch 3: UI Selection
+    - [ ] Task 4: Fix selectionKey in activation.ts
+    - [ ] Task 5: Wire selection and deploy button
+  - [ ] Batch 4: Podman Target
+    - [ ] Task 6: Add target override to ops handlers
+    - [ ] Task 7: Add ops-container dep to scaffold
+  - [ ] Batch 5: E2E
+    - [ ] Task 8: Build images and verify e2e deploy
