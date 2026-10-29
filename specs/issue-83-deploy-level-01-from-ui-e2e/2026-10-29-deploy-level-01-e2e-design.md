@@ -85,15 +85,17 @@ dataTable({
 }),
 actionButton({
   label: "Deploy Selected Topology",
-  url: "/api/scaffold/catalogue/#{selection.name}/deploy",
+  url: "/api/scaffold/catalogue/#{selection.catalogue.name}/deploy",
   method: "POST",
-  confirm: "Deploy topology #{selection.name}?",
+  confirm: "Deploy topology #{selection.catalogue.name}?",
   style: "primary",
   onSuccess: { refresh: ["catalogue"], message: "Deployment started" },
 }),
 ```
 
-**Fallback:** If the `#{selection.name}` template syntax is not supported by actionButton's URL interpolation, build a `<catalogue-deploy-view>` custom Lit element that fetches the catalogue API and renders rows with per-row Deploy buttons. The declarative approach is preferred — verify template support before falling back.
+**Template interpolation:** The `#{selection.<datasetId>.<field>}` syntax is a supported pages-runtime feature (confirmed in context-wiring tests — e.g. `#{selection.adverseEvents.id}`). For the catalogue table, the dataset ID is `"catalogue"` and the selection field is `"name"`, giving `#{selection.catalogue.name}`.
+
+**Fallback:** If the actionButton doesn't support template URLs (distinct from the context-wiring layer), build a `<catalogue-deploy-view>` custom Lit element with per-row Deploy buttons.
 
 ---
 
@@ -183,7 +185,14 @@ Then `mvn package -Pcontainer -DskipTests` builds the image into the local Podma
 
 **Prerequisite:** `podman machine start` must have run. The `PodmanDeploymentTargetLiveTest` already validates this connectivity — replicate its setup expectations.
 
-**Scaffold must have the ops `container` module on its classpath** to make `PodmanDeploymentTarget` discoverable as a CDI bean. Verify this dependency exists in `scaffold-backend/pom.xml`; add it if missing.
+**Scaffold must have the ops `container` module on its classpath** to make `PodmanDeploymentTarget` discoverable as a CDI bean. Currently scaffold depends only on `casehub-ops-service` — `casehub-ops-container` is **not** on the classpath. Add the dependency to `scaffold-backend/pom.xml`:
+
+```xml
+<dependency>
+  <groupId>io.casehub</groupId>
+  <artifactId>casehub-ops-container</artifactId>
+</dependency>
+```
 
 ---
 
