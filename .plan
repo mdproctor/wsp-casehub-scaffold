@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-76-topology-catalogue-deploy
-state: closing:pushed
+state: closing:merged
 date: 2026-10-28
 issue-repo: casehubio/scaffold
 covers: 76
