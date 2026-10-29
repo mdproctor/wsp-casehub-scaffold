@@ -2,21 +2,30 @@
 
 ## Last Session
 
-Fixed both console tab bugs (#50, #51) on branch `issue-50-console-tab-fixes`.
+Implemented case definitions (#68), triaged stale issues (#24-27), landed three small issues (#28, #74, #75), designed and planned the topology catalogue (#76).
 
-**#50 — Sessions tab 404:** Removed Sessions tab from default tabs in `buildDefaultTabs()`. The sessions service (claudony) doesn't exist, so the tab showed a 404 error. Sessions view code (`sessions.ts`) retained for future use when claudony is deployed. Also cleaned up session entries from navigation maps.
+- **#68** — 8 YAML case definitions composing ops' domain cases via subCase bindings with CBR, milestones, and SLA tracking. BFF layer with CaseService + ApprovalService dual-impl pattern. Frontend cases tab + inline status indicators. Merged to main.
+- **#28** — closed as already working (Quarkus dev mode restarts on resource changes)
+- **#74** — getCaseDetail sub-case decomposition via PlanItemView.subCaseIds() (unblocked by engine#1260). Merged to main.
+- **#75** — remaining 3 YAML case definitions (application-lifecycle, scaling-event, service-upgrade). Merged to main.
+- **#76** — topology catalogue + deploy. Design spec written and reviewed (3 rounds, 15 issues, all resolved). Implementation plan written (3 batches, 7 tasks).
 
-**#51 — Definitions sub-tab empty:** Root cause was a response reader mismatch in the `case-explorer` npm package. `DEFAULT_RESPONSE_READER` reads `response.entities` but the Java `PagedResponse` returns `{ items: [...] }`. Additionally, `DEFAULT_READER.id` expects `entity.id` but `CaseDefinition` has no `id` field (uses composite key `namespace/name/version`). Fixed by switching from `hostPanel("case-definition-browser", ...)` to `dataTable` bound to the existing "case-definitions" dataset, which already correctly uses `dataPath: "items"`. Trade-off: loses the entity-browser split pane UX, gains a working table. The entity-browser fix belongs in the `blocks-ui` repo's `caseDefinitionType` preset.
+## Immediate Next Step
 
-## Current Branch
+`work continue 76` → execute the implementation plan at `plans/2026-10-28-topology-catalogue-deploy.md`. Start with Batch 1: Tasks 1-2 are ops cross-repo changes (extract `compileTopology()`, add metadata/playbook files to Level 01). Check if ops is free before starting. Task 3 onwards is pure scaffold.
 
-`issue-50-console-tab-fixes` — covers #50 and #51. Implementation complete, build passes, ready for work-end.
+## Key Context
 
-## Upstream Fix Needed
-
-The `caseDefinitionType` preset in `@casehubio/blocks-ui-case-explorer` needs `responseReader: offsetPaginationReader` and a custom `reader` that constructs IDs from `namespace/name/version`. This should be fixed in the `blocks-ui` repo. Once fixed, the Definitions sub-tab in `system.ts` can be reverted to use `hostPanel("case-definition-browser", ...)` for the richer entity-browser UX.
+- Spec: `specs/issue-76-topology-catalogue-deploy/2026-10-28-topology-catalogue-deploy-design.md`
+- Review: `/Users/mdproctor/reviews/casehub-scaffold/issue-76-topology-catalogue-deploy-20261028-112518/tracker.md`
+- Settled decisions: `/api/scaffold/catalogue` path, layered `List<List<>>` plan structure, `compileTopology()` extraction, `pages-step-viewer` + `playbook.yaml`, split view with graphical default + MD editor
+- 8 YAML case definitions in `scaffold-backend/src/main/resources/casehub/ops/`
+- engine#1260 landed — PlanItemView has `subCaseIds()` and `capabilityName()`
+- All scaffold issues closed except #76 (branch `issue-76-topology-catalogue-deploy`)
 
 ## References
 
-- `docs/blog/2026-08-14-mdp01-first-tab-showed-nothing.md` — prior first-tab bug analysis
-- Commit 980e520 — original first-tab fix for Cases tab
+- `plans/2026-10-28-topology-catalogue-deploy.md`
+- `specs/issue-76-topology-catalogue-deploy/2026-10-28-topology-catalogue-deploy-design.md`
+- `specs/issue-76-topology-catalogue-deploy/decisions.md`
+- `blog/2026-10-22-mdp01-case-composition-layer.md`
