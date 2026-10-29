@@ -1,0 +1,15 @@
+# Work Plan — issue-83-deploy-level-01-from-ui-e2e
+
+## State
+branch: issue-83-deploy-level-01-from-ui-e2e
+state: scaffolded
+project-sha: 
+date: 
+issue-repo: casehubio/scaffold
+covers: 83
+design-repo: project
+design-section-hashes: 
+flyway-next-v: 
+
+## Queue
+- [ ] casehubio/scaffold#83 — Issue #83 ← active
