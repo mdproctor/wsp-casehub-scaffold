@@ -10,13 +10,13 @@ design-repo: project
 
 ## Queue
 - [ ] casehubio/scaffold#76 — Topology catalogue + deploy ← active
-  - [ ] Batch 1: Ops+DTOs
-    - [ ] Task 1: Extract compileTopology (ops)
-    - [ ] Task 2: Metadata+playbook files (ops)
-    - [ ] Task 3: Service interface+DTOs
-  - [ ] Batch 2: Backend
-    - [ ] Task 4: EmbeddedTopologyCatalogueService
-    - [ ] Task 5: TopologyCatalogueResource
-  - [ ] Batch 3: Frontend
-    - [ ] Task 6: Deploy tab restructure
-    - [ ] Task 7: Full build verification
+  - [x] Batch 1: Ops+DTOs
+    - [x] Task 1: Extract compileTopology (ops)
+    - [x] Task 2: Metadata+playbook files (ops)
+    - [x] Task 3: Service interface+DTOs
+  - [x] Batch 2: Backend
+    - [x] Task 4: EmbeddedTopologyCatalogueService
+    - [x] Task 5: TopologyCatalogueResource
+  - [x] Batch 3: Frontend
+    - [x] Task 6: Deploy tab restructure
+    - [x] Task 7: Full build verification
