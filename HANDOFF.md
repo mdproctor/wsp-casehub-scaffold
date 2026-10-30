@@ -2,19 +2,38 @@
 
 ## Last Session
 
-Brainstormed and planned epic #83 (Deploy Level 01 from the UI — end-to-end). Full design cycle: context gathering across 4 repos, 5 decisions captured, spec written with post-spec review, implementation plan with 5 batches / 8 tasks. No code changes — design only.
+Executed implementation plan for epic #83 (Deploy Level 01 from the UI — end-to-end). Completed 7 of 8 tasks across 5 repos. All code changes committed and pushed. Only E2E verification remains.
 
-Discovered two CI health issues during design: casehub-all reactor red (Jandex build-order in platform Spring convergence — `registry-jpa` missing from `aggregator-convergence.xml`), and scaffold CI lacks `push` trigger (commits pushed directly to main were never validated).
+### Completed
+
+- **T1 (CI Health):** Already done in prior session (commit `22a98d37` — convergence aggregator fix). Current CI failures are unrelated (claudony-app tests, platform publish script).
+- **T2 (CI Health):** Added push trigger to scaffold CI workflow. Created issue #87, committed `960a2aa`.
+- **T3 (Land Branches):** Merged engine PR #1270 (`fix/flow-execution-registry-scope`) and ops PR #214 (`issue-76-topology-catalogue-deploy`). Both installed to local Maven.
+- **T4 (UI Selection):** Fixed selectionKey alias resolution in pages-runtime activation.ts. Committed to casehub-pages (PR #603 merged). Resolves `col("name", "Topology")` mapping — was looking up source ID verbatim instead of output column ID.
+- **T5 (UI Selection):** Wired catalogue table selection + deploy button in deploy.ts. Added `selection: "single"`, `selectionKey: "name"`, and an `actionButton` with POST to deploy endpoint. Committed `c8672cb`.
+- **T6 (Podman Target):** Added `casehub.ops.deployment-target-override` config property to provision handler and drift checker in ops. PR #216 merged. Test added.
+- **T7 (Podman Target):** Added `casehub-ops-container` dependency to scaffold-backend + Jandex index + dev-mode target override `podman`. Committed `9ca44ad`.
+
+### Dependency convergence note
+
+Ops build requires `-Denforcer.skip=true` due to serverlessworkflow version mismatch (7.35.3 vs 7.25.1 via quarkus-flow). Pre-existing issue from recently added enforcer rule in platform.
 
 ## Immediate Next Step
 
-`work continue` → Execute the implementation plan starting from Batch 1 (CI Health). Plan at `plans/2026-10-29-deploy-level-01-e2e.md`.
+`work continue` -> Execute Task 8 (Batch 5: E2E verification). No code changes — verification only:
 
-## Cross-Module
+1. Start Podman: `podman machine start`
+2. Build container images for Level 01 topology
+3. Start scaffold dev mode: `mvn quarkus:dev`
+4. Browser: Deploy tab -> select 01-hello-llm -> Deploy -> verify 4 containers start
+5. Verify failure modes (no selection, duplicate deploy, Podman down)
 
-- **casehub-all reactor red** — Jandex index build-order: `registry-spring-jpa` can't find `registry-jpa` Jandex index. Fix: add missing modules to `platform/aggregator-convergence.xml`. No tracked issue yet — create one in `casehubio/platform`.
-- **Engine branch** `fix/flow-execution-registry-scope` — ready to merge (casehubio/engine#1265)
-- **Ops branch** `issue-76-topology-catalogue-deploy` — ready to merge
+## Cross-Module Changes This Session
+
+- **casehub-pages** (casehubio/casehub-pages): PR #603 merged — selectionKey alias fix in activation.ts
+- **engine** (casehubio/engine): PR #1270 merged — @ApplicationScoped on FlowExecutionRegistry
+- **ops** (casehubio/casehub-ops): PR #214 merged — topology catalogue deploy + Level 01 metadata; PR #216 merged — deployment-target-override config
+- **scaffold** (casehubio/scaffold): 3 commits on branch `issue-83-deploy-level-01-from-ui-e2e`
 
 ## References
 
