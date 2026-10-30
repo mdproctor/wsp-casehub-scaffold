@@ -5,7 +5,7 @@ date: 2026-10-30
 entry_type: note
 subtype: diary
 projects: [casehubio/scaffold]
-tags: [deploy, podman, pages-runtime, ci, design, topology]
+tags: [deploy, podman, pages-runtime, ci, design, topology, desired-state]
 series: issue-83-deploy-level-01-from-ui-e2e
 ---
 
@@ -14,6 +14,8 @@ series: issue-83-deploy-level-01-from-ui-e2e
 The previous entry built the topology catalogue — a compile-plan-deploy pipeline that turns YAML topology definitions into a desired-state graph, plans the transitions, and hands them to a reconciliation loop. The Deploy tab showed a table of topologies with their metadata. What it didn't do: let you click one and actually deploy it.
 
 That's what this epic is about. Select a topology row, click Deploy, watch four Podman containers come up in dependency order. One button, end-to-end. The kind of feature that sounds like a day's wiring work until you look at what's actually standing between you and a working deploy.
+
+![Click to Container: the full deploy path](images/deploy-click-to-container.svg)
 
 ## The column alias trap
 
@@ -36,7 +38,26 @@ Claude and I traced it through three layers of the pages framework. The issue is
 
 ![selectionKey column ID mismatch — source ID vs alias in the data pipeline](images/selectionkey-mismatch.svg)
 
-The fix belongs in `activation.ts`, where the selection wiring happens. When `selectionKey` is set, resolve it through the lookup's `ResultColumn` mapping — if `"name"` matches a `sourceId`, use the corresponding `columnId` instead. And switch from `row.text()` (which throws on non-TEXT types) to `row.cell()` with string coercion. Users write `col("name", "Topology")` and expect `selectionKey: "name"` to just work. The framework should close that gap.
+The fix belongs in `activation.ts`, where the selection wiring happens. When `selectionKey` is set, resolve it through the lookup's `ResultColumn` mapping — if `"name"` matches a `sourceId`, use the corresponding `columnId` instead. And switch from `row.text()` (which throws on non-TEXT types) to `row.cell()` with string coercion:
+
+```typescript
+let resolvedKey: ColumnId = selectionKey as ColumnId;
+if (lookup) {
+  for (const op of lookup.operations) {
+    if (op.type === "group") {
+      const match = op.columns
+        .find(rc => rc.sourceId === selectionKey && rc.columnId !== selectionKey);
+      if (match) { resolvedKey = match.columnId; break; }
+    }
+  }
+}
+(vizEl as any).getRowKey = (row: TypedRow) => {
+  const cv = row.cell(resolvedKey);
+  return cv.type === "NULL" ? "" : String(cv.value);
+};
+```
+
+This is a general framework fix, not a scaffold workaround. Anyone writing `col("name", "Topology")` with `selectionKey: "name"` would hit the same crash. The user writes what they mean — `name` is the column they're selecting by — and the framework closes the gap between source identity and output identity.
 
 ## Where do topologies actually deploy?
 
@@ -46,32 +67,44 @@ I had three options for overriding the target: change the YAML, make the YAML ta
 
 ![Deployment target routing — before (hardcoded) and after (config override)](images/deploy-target-routing.svg)
 
-The injection point is `CaseHubAppProvisionHandler.resolveTarget()`. It takes a target ID string, iterates all CDI-registered `ApplicationDeploymentTarget` beans, and matches by `targetId()`. Adding a `casehub.ops.deployment-target-override` config property — when set, it replaces the per-node target before the iteration — keeps the mechanism clean. The same override goes into `CaseHubAppDriftChecker.resolveTarget()` so drift detection stays in sync. Scaffold sets `%dev.casehub.ops.deployment-target-override=podman` and `PodmanDeploymentTarget` (already `@ApplicationScoped`, already returns `targetId() == "podman"`) handles the rest.
+The injection point is `CaseHubAppProvisionHandler.resolveTarget()`. It takes a target ID string, iterates all CDI-registered `ApplicationDeploymentTarget` beans, and matches by `targetId()`. A `casehub.ops.deployment-target-override` config property — when set, it replaces the per-node target before the iteration — keeps the mechanism clean. The same override goes into `CaseHubAppDriftChecker.resolveTarget()` so drift detection stays in sync.
 
-One catch: scaffold's `pom.xml` depends on `casehub-ops-service` but not `casehub-ops-container`. Without the container module on the classpath, `PodmanDeploymentTarget` isn't CDI-discoverable. A missing dependency masquerading as a missing feature.
+```java
+private ApplicationDeploymentTarget resolveTarget(String targetId) {
+    String effectiveTarget = (targetOverride != null && !targetOverride.isEmpty())
+            ? targetOverride : targetId;
+    if (effectiveTarget == null || effectiveTarget.isEmpty()) { return deployTarget; }
+    return allTargets.stream()
+                     .filter(t -> effectiveTarget.equals(t.targetId()))
+                     .findFirst()
+                     .orElse(deployTarget);
+}
+```
+
+Scaffold sets `%dev.casehub.ops.deployment-target-override=podman` and `PodmanDeploymentTarget` handles the rest. The pattern is worth naming: **graph truthfulness with runtime routing**. The declaration says what the system *intends*. The environment says where it *runs*. Mixing them creates graphs that lie — they show "podman" in plan views when the topology says "claudony", which makes auditing meaningless. Separating them means the graph is always an accurate representation of the declaration, and the routing is purely a deployment concern.
+
+One catch: scaffold's classpath included `casehub-ops-service` but not `casehub-ops-container`. Without the container module, `PodmanDeploymentTarget` isn't CDI-discoverable. A missing dependency masquerading as a missing feature.
 
 ## The CI problems nobody asked about
 
-I didn't set out to fix CI. I was checking whether the cross-repo branches from the previous epic (engine's `@ApplicationScoped` fix, ops' `compileTopology()` extraction) were safe to merge. That's when I noticed the casehub-all reactor was red. Every recent build — all of them.
+I didn't set out to fix CI. I was checking whether the cross-repo branches from the previous epic were safe to merge. That's when I noticed the casehub-all reactor was red. Every recent build — all of them.
 
-The error: `Jandex index not found at registry-jpa/target/classes/META-INF/jandex.idx. Build the Quarkus module first.` The platform builds in parallel slices. Slice B builds `registry-jpa` and uploads its Jandex index as a CI artifact. The convergence phase downloads all artifacts and runs the full reactor with `-T 1C`. But the convergence aggregator (`aggregator-convergence.xml`) is designed to list Quarkus modules as Jandex fallbacks for when downloads fail — and `registry-jpa` isn't in that list. Neither are seven other paired modules. When the artifact download is corrupt or missing, there's no fallback, and `registry-spring-jpa`'s source generator crashes at `generate-sources` phase.
+As it turned out, the convergence aggregator issue had already been fixed by a prior session. The reactor was red for a different reason entirely: claudony-app test failures in the Apps step. Not a Jandex problem. Sometimes the thing you plan to fix isn't the thing that's actually broken.
 
-Then there was scaffold's own CI. The `Build and Publish` workflow triggers on `repository_dispatch`, `pull_request`, and `workflow_dispatch`. Not on `push`. The four commits from the previous epic were pushed directly to main. The workflow never fired. Scaffold has been running untested on CI since those commits landed.
-
-Two CI problems, neither related to the deploy feature, both blocking safe validation of the work. They go into the plan as prerequisites.
+But scaffold's own CI had a real gap. The `Build and Publish` workflow triggers on `repository_dispatch`, `pull_request`, and `workflow_dispatch`. Not on `push`. Every commit from the previous epic was pushed directly to main via rebase-merge. The workflow never fired. Scaffold had been running untested since those commits landed. Adding `push: branches: [main]` to the workflow is a two-line fix. The gap it leaves behind is a reminder that CI configurations deserve the same review as production code.
 
 ## The image question
 
-The four container images for Level 01 — `casehubio/manifest`, `casehubio/eidos`, `casehubio/engine`, `casehubio/my-llm-app` — don't exist in any registry. Ops operates on a prebuilt-image model: `PrebuiltImagePipeline` is the default `ApplicationBuildPipeline`, and it just passes through the `image` field from the topology YAML. No building happens. The `topology-test-on-dispatch.yml` workflow gets triggered by `image-pushed` events from upstream repos — ops consumes images, it doesn't produce them.
+The four container images for Level 01 — `casehubio/manifest`, `casehubio/eidos`, `casehubio/engine`, `casehubio/my-llm-app` — don't exist in any registry. Ops operates on a prebuilt-image model: `PrebuiltImagePipeline` passes through the `image` field from the topology YAML. No building happens. For local dev, the images need to come from somewhere — each source repo will need a Quarkus `container-image-podman` Maven profile. This is prerequisite work in each source repo, outside the scope of scaffold, and the last step before end-to-end verification.
 
-For local dev, the images need to come from somewhere. Each source repo will need a Quarkus `container-image-podman` extension in a Maven profile — `mvn package -Pcontainer -DskipTests` builds the image into the local Podman store. This is prerequisite work in each source repo, outside the scope of scaffold.
+## What "end-to-end" actually means here
 
-## Five batches
-
-What started as "wire a deploy button" became five workstreams across four repositories.
+What started as "wire a deploy button" became work across five repositories: casehub-pages (selectionKey fix), engine (scope annotation), ops (target override + topology metadata), scaffold (UI wiring + dependency + config), and casehub-all (CI investigation).
 
 ![Execution dependency graph showing five workstreams](images/deploy-e2e-dependency-graph.svg)
 
-The prerequisite fixes (reactor build order, scaffold CI trigger) can run in parallel. The UI work (selectionKey fix + deploy button wiring) and branch landing can run in parallel after the prerequisites. The Podman target override needs the branches landed. End-to-end verification needs everything. Eight tasks, five batches, each batch a safe wrap point.
+The dependency graph matters because it reveals something about the platform's architecture. A single user-facing feature — clicking a deploy button — required changes at every layer: the UI component framework, the case engine's CDI scoping, the ops deployment routing, the scaffold integration, and CI infrastructure. Each change was small. The complexity wasn't in any one change but in the coordination across boundaries.
 
-The implementation plan is written but not started. The next session picks it up from Batch 1.
+This is the nature of a platform in its early stages. Every vertical feature tests horizontal assumptions. The column alias mismatch in pages-runtime was invisible until someone tried to use selection with aliased columns — a case the DSL makes easy to write but the activation layer didn't handle. The missing `casehub-ops-container` dependency was invisible until someone tried to route deployments to Podman in dev mode — a path that only exists when you bring the right bean onto the classpath. These aren't bugs in the traditional sense. They're gaps between what the abstractions promise and what the wiring delivers.
+
+The implementation is complete except for the end-to-end verification — building the actual container images and watching the full deploy sequence run. The code path from click to container is wired. The column resolves. The target routes. The next session starts Podman and finds out what the containers think about all this.
