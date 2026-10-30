@@ -2,7 +2,7 @@
 
 ## State
 branch: issue-83-deploy-level-01-from-ui-e2e
-state: active
+state: closing:review
 project-sha: 
 date: 
 issue-repo: casehubio/scaffold
@@ -11,6 +11,7 @@ design-repo: project
 design-section-hashes: 
 flyway-next-v: 
 
+evidence-era: true
 ## Queue
 - [ ] casehubio/scaffold#83 — Issue #83 ← active
   - [x] Batch 1: CI Health
