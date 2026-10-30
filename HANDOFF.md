@@ -31,9 +31,9 @@ Ops build requires `-Denforcer.skip=true` due to serverlessworkflow version mism
 ## Cross-Module Changes This Session
 
 - **casehub-pages** (casehubio/casehub-pages): PR #603 merged — selectionKey alias fix in activation.ts
-- **engine** (casehubio/engine): PR #1270 merged — @ApplicationScoped on FlowExecutionRegistry
+- **engine** (casehubio/engine): PR #1270 merged — @ApplicationScoped on FlowExecutionRegistry; PR #1273 open — remove dead serverlessworkflow-experimental-types dep + fix watchdog parent version (issue #1272)
 - **ops** (casehubio/casehub-ops): PR #214 merged — topology catalogue deploy + Level 01 metadata; PR #216 merged — deployment-target-override config
-- **scaffold** (casehubio/scaffold): 3 commits on branch `issue-83-deploy-level-01-from-ui-e2e`
+- **scaffold** (casehubio/scaffold): 4 commits on branch `issue-83-deploy-level-01-from-ui-e2e` (added neocortex-annotation-api dep for CDI augmentation)
 
 ## References
 
